@@ -27,7 +27,7 @@
 #'
 #' @export
 
-connect_live <- function(conn = conn, Driver = ifelse(base::Sys.info()['sysname'][[1]] == "Linux", "{ODBC Driver 17 for SQL Server}", "SQL Server"), Server = "11100000223803.s1data.net", Database = "SOFTONE", Uid = "analytics", Pwd = "idlyKQcUWP%6&$23tn" ) {
+connect_live <- function(conn = conn, Driver = ifelse(base::Sys.info()['sysname'][[1]] == "Linux", "{ODBC Driver 17 for SQL Server}", "SQL Server"), Server = "11100000223803.s1data.net", Database = "SOFTONE", Uid = "analytics", Pwd = "" ) {
   conn <- RODBC::odbcDriverConnect(paste("Driver=", Driver, "; Server=", Server, "; Database=", Database, "; Uid=", Uid, "; Pwd=", Pwd, sep = ""))
 
   return(conn)
