@@ -19,7 +19,6 @@ library(AzureStor)
 # Define the blob storage
 cont <- blob_container(
   "https://softonebilogs.blob.core.windows.net/softonebilogs",
-  sas="sp=racwli&st=2022-04-01T13:42:50Z&se=2022-12-31T22:42:50Z&spr=https&sv=2020-08-04&sr=c&sig=mIpQrdjrjRmaOeWxR8j24k%2BVtH1JjajPk5CtOi6s9Cs%3D")
 
 
 code <- "-"
