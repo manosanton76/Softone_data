@@ -50,8 +50,7 @@ cluster_customers <- function(code, datalake = 1) {
 
 
   # 1. Get Access to Azure data lake ---------------------------------------------
-  token <- AzureAuth::get_azure_token(token_path, "f99f92d3-7e2b-4820-858a-b629fad639e0", "b684d32b-6c1e-4538-af61-d19a1921ec80",
-                                      password="RGG7Q~v4iXb4btVT47_pMkG0e8Sn_gDwK3DOw", auth_type="client_credentials")
+  token <- AzureAuth::get_azure_token(token_path,  auth_type="client_credentials")
 
 
   ad_endp_tok <- AzureStor::storage_endpoint(main_path, token=token)
