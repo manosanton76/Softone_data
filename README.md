@@ -51,9 +51,9 @@ Installations. Created with G. Giorgoulakis, I. Kotsogianni & M. Kosmas
 The folder path **//fileserver1/ProductManagement/Manos/Softone_data/docker_analytics_service/** contains all necessary files to 
 create a docker container to run the analytics service.   
 
-* **//fileserver1/ProductManagement/Manos/Softone_data/docker_analytics_service/Docker_analytics.R ** This is the R script that
+* **//fileserver1/ProductManagement/Manos/Softone_data/docker_analytics_service/Docker_analytics.R** This is the R script that
 when the container starts, runs all analytics for the provided serial number.   
-* **//fileserver1/ProductManagement/Manos/Softone_data/docker_analytics_service/Dockerfile ** This is the Dockerfile that creates the docker container.   
+* **//fileserver1/ProductManagement/Manos/Softone_data/docker_analytics_service/Dockerfile** This is the Dockerfile that creates the docker container.   
 * **//fileserver1/ProductManagement/Manos/Softone_data/docker_analytics_service/sendgrid_creds** This is a file containg credentials information
 used to sent emails through sengrid.  
 * **//fileserver1/ProductManagement/Manos/Softone_data/docker_analytics_service/Soft1R_0.1.0.tar.gz** This is the compiled Soft1R R library
