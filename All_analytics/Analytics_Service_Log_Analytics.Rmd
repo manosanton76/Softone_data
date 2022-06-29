@@ -1,0 +1,488 @@
+---
+title: "R Notebook"
+output: 
+    html_document:
+      toc: true
+      toc_float: true
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(Soft1R)
+library(RODBC)
+library(DT)
+```
+
+
+
+```{r include=FALSE}
+
+# Sales Forecast
+
+filelist = list.files(path = '/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/Logs', pattern = "*Forecasts_Sales.csv", full.names = TRUE)
+
+#assuming tab separated values with a header
+datalist = lapply(filelist, function(x)read.csv2(x, sep = ";", colClasses = c("character")))
+
+#assuming the same header/columns for all files
+data <-
+    do.call("rbind", datalist) %>%
+  mutate(finalmodelmape = as.numeric(gsub(",", ".", finalmodelmape)),
+         duration = as.numeric(gsub(",", ".", duration))
+  )
+
+
+# inst <- readRDS('/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/docker/docker_all_analytics/inst.rds')
+# @2 connect to the live database
+conn <- connect_live()
+options(scipen=999)
+
+## Insert Installations
+
+inst <- sqlQuery(conn, "SELECT
+                 I.[INST] AS [InstallationID]
+                 ,I.[CODE] AS [SerialNumber]
+                 ,I.[NAME] AS [Name]
+                 ,I.[ISACTIVE] AS [IsActive]
+
+                 ,(SELECT T.[CODE] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDRS]) AS [PartnerCode]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDRS]) AS [PartnerName]
+
+                 ,(SELECT T.[CODE] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDR]) AS [CustomerCode]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDR]) AS [CustomerName]
+
+                 ,(SELECT (SELECT b.[NAME] FROM [SOFTONE].[dbo].[MTRMANFCTR] b WHERE b.[MTRMANFCTR] = T.MTRMANFCTR)  FROM [SOFTONE].[dbo].[CCCBRAND] T WHERE T.[CCCBRAND] = I.[CCCBRAND1]) AS [Manufacturer]
+
+                 ,I.[INSDATE] AS [InsertDate]
+                 ,I.[FROMDATE] AS [ActivationDate]
+                 ,I.[WDATEFROM] AS [StartDate]
+                 ,I.[WDATETO] AS [EndDate]
+                 ,I.[WDATEFROM] AS [StartDate]
+                 ,I.[CCCLOCKDATE] AS [FinalRightsDate]
+
+                 ,I.[NUM01] AS [LicensedUsers]
+
+                 ,I.[CCCBRAND1] AS [Brandid]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[CCCBRAND] T WHERE T.[CCCBRAND] = I.[CCCBRAND1]) AS [BrandName]
+
+                 ,I.[CCCLICENSETYPE1] AS [LicenseTypeId]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[CCCLICENSETYPE] T WHERE T.[CCCLICENSETYPE] = I.[CCCLICENSETYPE1]) AS [LicenceTypeName]
+
+                 ,I.[UTBL02] AS [KindOfInstallationId]
+                 ,(SELECT U2.[NAME] FROM [SOFTONE].[dbo].[UTBL02] U2 WHERE U2.[UTBL02] = I.[UTBL02] AND U2.[SODTYPE] = I.[SODTYPE]) AS [KindOfInstallation]
+
+
+                 ,I.[CCCMASTERITEM] AS [MasterItemId]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[CCCMASTERITEM] T WHERE T.[CCCMASTERITEM] = I.[CCCMASTERITEM]) AS [MasterItemName]
+
+                 ,(SELECT U1.[NAME] FROM [SOFTONE].[dbo].[UTBL01] U1 WHERE U1.[UTBL01] = I.[UTBL01] AND U1.[SODTYPE] = I.[SODTYPE]) AS [SupportType]
+
+                 ,I.CCCOKSYS AS [PreInvoiced]
+
+                 -- Not useful columns ????
+                 ,I.[INSTTYPE] AS [InstallationType]
+                 ,(SELECT [NAME] FROM [SOFTONE].[dbo].[USERS] U WHERE I.[INSUSER] = U.[USERS]) AS [InsertUser]
+                 ,I.[REMARKS] AS [SoftoneComments]
+                 ,(SELECT U3.[NAME] FROM [SOFTONE].[dbo].[UTBL03] U3 WHERE U3.[UTBL03] = I.[UTBL03] AND U3.[SODTYPE] = I.[SODTYPE]) AS [UTBL03]
+                 ,(SELECT U4.[NAME] FROM [SOFTONE].[dbo].[UTBL04] U4 WHERE U4.[UTBL04] = I.[UTBL04] AND U4.[SODTYPE] = I.[SODTYPE]) AS [UTBL04]
+                 ,(SELECT U5.[NAME] FROM [SOFTONE].[dbo].[UTBL05] U5 WHERE U5.[UTBL05] = I.[UTBL05] AND U5.[SODTYPE] = I.[SODTYPE]) AS [UTBL05]
+                 ,I.[DATE03] AS [NextCustSurvey]
+                 ,I.[UPDDATE] AS [UpdateDate]
+                 ,(SELECT [NAME] FROM [SOFTONE].[dbo].[USERS] U WHERE I.[UPDUSER] = U.[USERS]) AS [UpdateUser]
+                 ,I.[CCCREMARKS] AS [PartnerComments]
+
+                 --      ,I.[CCCREMARKSSURV] AS [Survey Comments]
+                 FROM [SOFTONE].[dbo].[INST] I
+                 INNER JOIN CCCBRAND T
+                 ON T.[CCCBRAND] = I.[CCCBRAND1]
+                 INNER JOIN [MTRMANFCTR] B
+                 ON T.MTRMANFCTR = B.MTRMANFCTR
+
+                 WHERE B.[NAME] = 'Soft One'", as.is = TRUE) %>% 
+  select(SerialNumber, Name, CustomerName, PartnerName, KindOfInstallation)
+
+# Close all connections
+odbcCloseAll()
+
+data_sales_forecast <- 
+data %>% 
+  left_join(inst, by = c("code" = "SerialNumber")) %>%
+  mutate(date = parse_datetime(
+      paste(str_sub(date, start = 1, end = 4), "-",
+            str_sub(date, start = 6, end = 7), "-",
+            str_sub(date, start = 9, end = 10), " ",
+            str_sub(date, start = 12, end = 13), ":",
+            str_sub(date, start = 15, end = 16),
+            sep = "")),
+      finalmodelrmse = as.numeric(finalmodelrmse),
+      vmtrstat_rows = as.numeric(vmtrstat_rows),
+      customers = as.numeric(customers),
+      products = as.numeric(products)
+      )
+
+
+
+```
+
+
+
+
+
+
+```{r include=FALSE}
+
+# Receipts Forecast
+
+## - Insert data
+
+filelist = list.files(path = '/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/Logs', pattern = "*Forecasts_Receipts.csv", full.names = TRUE)
+
+#assuming tab separated values with a header
+datalist = lapply(filelist, function(x)read.csv2(x, sep = ";", colClasses = c("character")))
+
+#assuming the same header/columns for all files
+data <-
+    do.call("rbind", datalist) %>%
+  mutate(finalmodelmape = as.numeric(gsub(",", ".", finalmodelmape)),
+         duration = as.numeric(gsub(",", ".", duration))
+  )
+
+data_receipts_forecast <- 
+data %>% 
+  left_join(inst, by = c("code" = "SerialNumber")) %>%
+  mutate(date = parse_datetime(
+      paste(str_sub(date, start = 1, end = 4), "-",
+            str_sub(date, start = 6, end = 7), "-",
+            str_sub(date, start = 9, end = 10), " ",
+            str_sub(date, start = 12, end = 13), ":",
+            str_sub(date, start = 15, end = 16),
+            sep = "")),
+      finalmodelrmse = as.numeric(finalmodelrmse),
+      vmtrstat_rows = as.numeric(vmtrstat_rows),
+      customers = as.numeric(customers),
+      products = as.numeric(products)
+      )
+
+
+
+```
+
+
+
+
+```{r include=FALSE}
+# Forecast per product
+
+## - Insert data
+
+
+filelist = list.files(path = '/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/Logs', pattern = "*Forecasts_Products.csv", full.names = TRUE)
+
+#assuming tab separated values with a header
+datalist = lapply(filelist, function(x)read.csv2(x, sep = ";", colClasses = c("character")))
+
+#assuming the same header/columns for all files
+data <-
+    do.call("rbind", datalist) %>%
+  mutate(finalmodelmape = as.numeric(gsub(",", ".", finalmodelmape)),
+         duration = as.numeric(gsub(",", ".", duration))
+  )
+
+data_forecast_per_product <- 
+data %>% 
+  left_join(inst, by = c("code" = "SerialNumber")) %>%
+  mutate(date = parse_datetime(
+      paste(str_sub(date, start = 1, end = 4), "-",
+            str_sub(date, start = 6, end = 7), "-",
+            str_sub(date, start = 9, end = 10), " ",
+            str_sub(date, start = 12, end = 13), ":",
+            str_sub(date, start = 15, end = 16),
+            sep = "")),
+      finalmodelrmse = as.numeric(finalmodelrmse),
+      vmtrstat_rows = as.numeric(vmtrstat_rows),
+      customers = as.numeric(customers),
+      products = as.numeric(products)
+      )
+
+
+
+```
+
+
+
+
+```{r include=FALSE}
+# Customer Segmentation
+
+## - Insert data
+
+
+filelist = list.files(path = '/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/Logs', pattern = "*Segmentation_Customers.csv", full.names = TRUE)
+
+#assuming tab separated values with a header
+datalist = lapply(filelist, function(x)read.csv2(x, sep = ";", colClasses = c("character")))
+
+#assuming the same header/columns for all files
+data <-
+    do.call("rbind", datalist) %>%
+  mutate(duration = as.numeric(gsub(",", ".", duration))
+  )
+
+data_customer_segmentation <- 
+data %>% 
+  left_join(inst, by = c("code" = "SerialNumber")) %>%
+  mutate(date = parse_datetime(
+      paste(str_sub(date, start = 1, end = 4), "-",
+            str_sub(date, start = 6, end = 7), "-",
+            str_sub(date, start = 9, end = 10), " ",
+            str_sub(date, start = 12, end = 13), ":",
+            str_sub(date, start = 15, end = 16),
+            sep = "")),
+      clusteringnumsegments = as.numeric(clusteringnumsegments),
+      segment = as.numeric(segment),
+      N = as.numeric(N),
+      vmtrstat_rows = as.numeric(vmtrstat_rows),
+      customers = as.numeric(customers),
+      products = as.numeric(products)
+      )
+
+
+
+```
+
+
+
+
+```{r include=FALSE}
+# Item Segmentation
+
+## - Insert data
+
+filelist = list.files(path = '/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/Logs', pattern = "*Segmentation_Items.csv", full.names = TRUE)
+
+#assuming tab separated values with a header
+datalist = lapply(filelist, function(x)read.csv2(x, sep = ";", colClasses = c("character")))
+
+#assuming the same header/columns for all files
+data <-
+    do.call("rbind", datalist) %>%
+  mutate(duration = as.numeric(gsub(",", ".", duration))
+  )
+
+data_items_segmentation <- 
+data %>% 
+  left_join(inst, by = c("code" = "SerialNumber")) %>%
+  mutate(date = parse_datetime(
+      paste(str_sub(date, start = 1, end = 4), "-",
+            str_sub(date, start = 6, end = 7), "-",
+            str_sub(date, start = 9, end = 10), " ",
+            str_sub(date, start = 12, end = 13), ":",
+            str_sub(date, start = 15, end = 16),
+            sep = "")),
+      clusteringnumsegments = as.numeric(clusteringnumsegments),
+      segment = as.numeric(segment),
+      N = as.numeric(N),
+      vmtrstat_rows = as.numeric(vmtrstat_rows),
+      customers = as.numeric(customers),
+      products = as.numeric(products)
+      )
+
+
+
+```
+
+
+
+```{r include=FALSE}
+# Association Rules
+
+## - Insert data
+
+
+filelist = list.files(path = '/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/Logs', pattern = "*Association_Stats.csv", full.names = TRUE)
+
+#assuming tab separated values with a header
+datalist = lapply(filelist, function(x)read.csv2(x, sep = ";", colClasses = c("character")))
+
+#assuming the same header/columns for all files
+data <-
+    do.call("rbind", datalist) %>%
+  mutate(duration = as.numeric(gsub(",", ".", duration)),
+         lift_max = as.numeric(gsub(",", ".", lift_max))
+  )
+
+data_association_rules <- 
+data %>% 
+  left_join(inst, by = c("code" = "SerialNumber")) %>%
+  mutate(date = parse_datetime(
+      paste(str_sub(date, start = 1, end = 4), "-",
+            str_sub(date, start = 6, end = 7), "-",
+            str_sub(date, start = 9, end = 10), " ",
+            str_sub(date, start = 12, end = 13), ":",
+            str_sub(date, start = 15, end = 16),
+            sep = "")),
+      lift_over1 = as.numeric(lift_over1),
+      vmtrstat_rows = as.numeric(vmtrstat_rows),
+      customers = as.numeric(customers),
+      products = as.numeric(products)
+      )
+
+
+
+```
+
+
+
+
+```{r include=FALSE}
+# Main
+
+## - Insert data
+
+filelist = list.files(path = '/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/Logs', pattern = "*main.csv", full.names = TRUE)
+
+#assuming tab separated values with a header
+datalist = lapply(filelist[1:length(filelist)], function(x)read.csv2(x, sep = ";", colClasses = c("character")))
+
+library(data.table)
+
+data <- rbindlist(datalist, fill = TRUE) %>% 
+  mutate(start = as_datetime(start),
+         finish = as_datetime(finish),
+         durartion = round(((finish - start)/60), 1)) 
+
+data_main <- 
+data %>% 
+  left_join(inst, by = c("serialno" = "SerialNumber")) 
+
+
+
+```
+
+
+
+
+## Main 
+
+```{r}
+data_main %>% 
+  mutate_if(is.character,as.factor) %>% 
+  select(-ajobid, -checkid) %>% 
+  datatable( filter = 'top')
+  
+```
+
+## Plots 
+
+```{r}
+
+data_sales_forecast %>% 
+  ggplot(aes(duration, vmtrstat_rows)) +
+  geom_point()
+
+data_sales_forecast %>% 
+  ggplot(aes(duration, products)) +
+  geom_point()
+
+data_sales_forecast %>% 
+  ggplot(aes(duration, customers)) +
+  geom_point()
+
+
+
+data_sales_forecast %>% 
+  ggplot(aes(log(finalmodelmape), log(customers) )) +
+  geom_point()
+
+
+```
+
+
+## Sales Forecasts
+
+
+```{r}
+
+data_sales_forecast %>% 
+    mutate_if(is.character,as.factor) %>% 
+  group_by(code, Name, CustomerName, PartnerName, KindOfInstallation, date) %>% 
+  summarise(duration = max(duration),
+            mape_min = min(finalmodelmape),
+            vmtrstat_rows = min(vmtrstat_rows),
+            customers = min(customers),
+            products = min(products),
+            ) %>% datatable( filter = 'top')
+
+```
+
+
+
+
+## Receipts Forecasts
+
+```{r}
+
+data_sales_forecast %>% 
+    mutate_if(is.character,as.factor) %>% 
+  group_by(code, Name,  CustomerName, PartnerName, KindOfInstallation, date) %>% 
+  summarise(duration = max(duration),
+            mape_min = min(finalmodelmape),
+            vmtrstat_rows = min(vmtrstat_rows),
+            customers = min(customers),
+            products = min(products),
+            ) %>% 
+  datatable( filter = 'top')
+
+```
+
+
+## Customer Segmentation
+
+```{r}
+
+data_customer_segmentation %>% 
+  mutate_if(is.character,as.factor) %>% 
+  group_by(code, Name, CustomerName, PartnerName, KindOfInstallation, date, vmtrstat_rows, customers, products, duration) %>% 
+  summarise(N = n()) %>% 
+  select(-N) %>%
+  datatable( filter = 'top')
+
+
+```
+
+
+## Items Segmentation
+
+```{r}
+
+data_items_segmentation %>% 
+  mutate_if(is.character,as.factor) %>% 
+  group_by(code, Name,  CustomerName, PartnerName, KindOfInstallation, date, vmtrstat_rows, customers, products, duration) %>% 
+  summarise(N = n()) %>% 
+  select(-N) %>%
+  datatable(filter = 'top')
+
+```
+
+
+## Association Rules
+
+
+```{r}
+
+data_association_rules %>% 
+  mutate_if(is.character,as.factor) %>% 
+  select(code, Name, CustomerName, PartnerName, KindOfInstallation, everything()) %>%
+  datatable(filter = 'top')
+
+```
+
+
+
+```{r}
+
+
+
+```
+

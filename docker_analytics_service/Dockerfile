@@ -1,0 +1,34 @@
+# Use the official R image
+# FROM rocker/tidyverse
+FROM r-base:4.0.3
+
+# Install linux packages
+RUN apt-get update && apt-get install -y \
+    libicu-dev \
+    zlib1g-dev \
+    make \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    pandoc \
+    libxml2-dev \
+    unixodbc-dev
+
+
+# Install R Libraries
+RUN R -e "install.packages(c('tidyverse','foreach', 'doParallel', 'tictoc', 'lubridate', 'forecast', 'sweep', 'tidyquant', 'AzureAuth', 'AzureStor', 'zip', 'data.table', 'parsedate', 'anomalize', 'RODBC', 'pushoverr', 'cluster', 'tictoc', 'blastula', 'readr', 'logger', 'glue', 'recommenderlab', 'arules', 'arulesViz', 'httr', 'RCurl'), repos = 'https://packagemanager.rstudio.com/all/2021-05-03+Y3JhbiwyOjE3NTA3NTI7NkMwNDVBMjE')"
+
+
+# Set the working directory
+WORKDIR /home
+
+# Add files from the current directory
+COPY Docker_analytics.R .
+COPY Soft1R_0.1.0.tar.gz .
+COPY sendgrid_creds .
+
+
+# Install Soft1R library
+RUN R -e "install.packages('Soft1R_0.1.0.tar.gz', repos = NULL, type = 'source')"
+
+# Run script
+CMD R -e "source('/home/Docker_analytics.R')"

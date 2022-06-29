@@ -1,0 +1,216 @@
+---
+title: "Analytics Service"
+output: html_document
+---
+
+
+```{r include=FALSE}
+library(Soft1R)
+library(tidyverse)
+library(RODBC)
+library(lubridate)
+library(scales)
+library(plotly)
+library(ggthemes)
+
+# main_path <- "/mnt/c/Users/eam/OneDrive - Softone Technologies S.A/Business_Analytics/00_Analytics_Projects/12_Production/"
+main_path <- "/home/analytics/"
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+# @2 connect to the live database
+conn <- connect_live()
+options(scipen=999)
+
+## Insert Installations
+
+inst <- sqlQuery(conn, "SELECT
+                 I.[INST] AS [InstallationID]
+                 ,I.[CODE] AS [SerialNumber]
+                 ,I.[NAME] AS [Name]
+                 ,I.[ISACTIVE] AS [IsActive]
+
+                 ,(SELECT T.[CODE] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDRS]) AS [PartnerCode]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDRS]) AS [PartnerName]
+
+                 ,(SELECT T.[CODE] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDR]) AS [CustomerCode]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[TRDR] T WHERE T.[TRDR] = I.[TRDR]) AS [CustomerName]
+
+                 ,(SELECT (SELECT b.[NAME] FROM [SOFTONE].[dbo].[MTRMANFCTR] b WHERE b.[MTRMANFCTR] = T.MTRMANFCTR)  FROM [SOFTONE].[dbo].[CCCBRAND] T WHERE T.[CCCBRAND] = I.[CCCBRAND1]) AS [Manufacturer]
+
+                 ,I.[INSDATE] AS [InsertDate]
+                 ,I.[FROMDATE] AS [ActivationDate]
+                 ,I.[WDATEFROM] AS [StartDate]
+                 ,I.[WDATETO] AS [EndDate]
+                 ,I.[WDATEFROM] AS [StartDate]
+                 ,I.[CCCLOCKDATE] AS [FinalRightsDate]
+
+                 ,I.[NUM01] AS [LicensedUsers]
+
+                 ,I.[CCCBRAND1] AS [Brandid]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[CCCBRAND] T WHERE T.[CCCBRAND] = I.[CCCBRAND1]) AS [BrandName]
+
+                 ,I.[CCCLICENSETYPE1] AS [LicenseTypeId]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[CCCLICENSETYPE] T WHERE T.[CCCLICENSETYPE] = I.[CCCLICENSETYPE1]) AS [LicenceTypeName]
+
+                 ,I.[UTBL02] AS [KindOfInstallationId]
+                 ,(SELECT U2.[NAME] FROM [SOFTONE].[dbo].[UTBL02] U2 WHERE U2.[UTBL02] = I.[UTBL02] AND U2.[SODTYPE] = I.[SODTYPE]) AS [KindOfInstallation]
+
+
+                 ,I.[CCCMASTERITEM] AS [MasterItemId]
+                 ,(SELECT T.[NAME] FROM [SOFTONE].[dbo].[CCCMASTERITEM] T WHERE T.[CCCMASTERITEM] = I.[CCCMASTERITEM]) AS [MasterItemName]
+
+                 ,(SELECT U1.[NAME] FROM [SOFTONE].[dbo].[UTBL01] U1 WHERE U1.[UTBL01] = I.[UTBL01] AND U1.[SODTYPE] = I.[SODTYPE]) AS [SupportType]
+
+                 ,I.CCCOKSYS AS [PreInvoiced]
+
+                 -- Not useful columns ????
+                 ,I.[INSTTYPE] AS [InstallationType]
+                 ,(SELECT [NAME] FROM [SOFTONE].[dbo].[USERS] U WHERE I.[INSUSER] = U.[USERS]) AS [InsertUser]
+                 ,I.[REMARKS] AS [SoftoneComments]
+                 ,(SELECT U3.[NAME] FROM [SOFTONE].[dbo].[UTBL03] U3 WHERE U3.[UTBL03] = I.[UTBL03] AND U3.[SODTYPE] = I.[SODTYPE]) AS [UTBL03]
+                 ,(SELECT U4.[NAME] FROM [SOFTONE].[dbo].[UTBL04] U4 WHERE U4.[UTBL04] = I.[UTBL04] AND U4.[SODTYPE] = I.[SODTYPE]) AS [UTBL04]
+                 ,(SELECT U5.[NAME] FROM [SOFTONE].[dbo].[UTBL05] U5 WHERE U5.[UTBL05] = I.[UTBL05] AND U5.[SODTYPE] = I.[SODTYPE]) AS [UTBL05]
+                 ,I.[DATE03] AS [NextCustSurvey]
+                 ,I.[UPDDATE] AS [UpdateDate]
+                 ,(SELECT [NAME] FROM [SOFTONE].[dbo].[USERS] U WHERE I.[UPDUSER] = U.[USERS]) AS [UpdateUser]
+                 ,I.[CCCREMARKS] AS [PartnerComments]
+
+                 --      ,I.[CCCREMARKSSURV] AS [Survey Comments]
+                 FROM [SOFTONE].[dbo].[INST] I
+                 INNER JOIN CCCBRAND T
+                 ON T.[CCCBRAND] = I.[CCCBRAND1]
+                 INNER JOIN [MTRMANFCTR] B
+                 ON T.MTRMANFCTR = B.MTRMANFCTR
+
+                 WHERE B.[NAME] = 'Soft One'", as.is = TRUE)
+
+saveRDS(inst, file = paste(main_path, "docker/docker_all_analytics/inst.rds", sep = ""))
+```
+
+
+
+```{r include=FALSE}
+
+inst <- readRDS(file = paste(main_path, "docker/docker_all_analytics/inst.rds", sep = ""))
+
+```
+
+# VM Analytics 
+
+```{r include=FALSE}
+
+  filelist = list.files(path = paste(main_path, "Logs", sep = ""), pattern = "*.txt", full.names = TRUE)
+
+  
+  filelist <- filelist[(ifelse((length(filelist) - 1440)>=1, length(filelist) - 1440, 1)):length(filelist)]
+
+  
+  
+  
+  #assuming tab separated values with a header
+  datalist = lapply(filelist, function(x)read.table(x))
+
+  #assuming the same header/columns for all files
+  data <-
+    do.call("rbind", datalist) %>%
+    select(V2) %>%
+    separate(V2, c("ram", "cpu", "jobs"), sep = "([-])") %>%
+    mutate(ram = parse_number(ram),
+           cpu = 100 - parse_number(cpu),
+           jobs = parse_number(jobs),
+           date = with_tz(force_tz(as_datetime(
+  paste(str_sub(filelist, str_length(filelist[1])-27, str_length(filelist[1])-24), "-",
+        str_sub(filelist, str_length(filelist[1])-22, str_length(filelist[1])-21), "-",
+        str_sub(filelist, str_length(filelist[1])-19, str_length(filelist[1])-18), " ",
+        str_sub(filelist, str_length(filelist[1])-16, str_length(filelist[1])-15), ":",
+        str_sub(filelist, str_length(filelist[1])-13, str_length(filelist[1])-12), ":",
+        str_sub(filelist, str_length(filelist[1])-10, str_length(filelist[1])-9),
+        sep = "")), "Europe/London"), "Europe/Athens"))
+
+  
+```
+
+
+```{r echo=FALSE, fig.height=7, fig.width=10}
+g <- 
+data %>% 
+  ggplot() +
+  geom_line(aes(date, ram), color = "steelblue") +
+  geom_point(aes(date, ram), size = .5, color = "steelblue") +
+  scale_y_continuous(labels = unit_format(unit = "GB", scale = 1e-6), limits = c(0, max(data$ram))) +
+  labs(
+    title = "Available RAM last 24 hours",
+    y = "Available RAM in GB"
+  ) + 
+  theme_fivethirtyeight()
+
+ggplotly(g)
+
+```
+
+```{r echo=FALSE, fig.height=7, fig.width=10}
+
+g <- 
+data %>% 
+  ggplot() +
+  geom_line(aes(date, cpu), color = "steelblue") +
+  geom_point(aes(date, cpu), size = .5, color = "steelblue") +
+  ylim(0, max(data$cpu)) +
+  # scale_y_continuous(labels = unit_format(unit = "GB", scale = 1e-6)) +
+  labs(
+    title = "Available CPU % last 24 hours",
+    y = "Available CPU %"
+  ) + 
+  theme_fivethirtyeight()
+
+ggplotly(g)
+```
+
+
+# JOBS table
+
+
+```{r echo=FALSE}
+library(DT)
+
+  filelist <- list.files(path = paste(main_path, "Logs", sep = ""), pattern = "*._jobs.csv", full.names = TRUE)
+  filelist <- filelist[(length(filelist)-50):length(filelist)]
+  
+  test <-  data.table::rbindlist(lapply(filelist, data.table::fread, colClasses=list(character=1:ncol(data.table::fread(filelist[1]))))) %>% 
+    left_join(inst %>% select(SerialNumber, CustomerName, PartnerName) , by = c("serialno" = "SerialNumber")) %>% 
+    mutate(start = as_datetime(start),
+           finish = as_datetime(finish),
+           duration_min = round((finish - start)/60, 1),
+           result = as.factor(ifelse(is.na(finish) == TRUE, "FAIL", "SUCCESS")),
+           serialno = as.factor(serialno),
+           CustomerName = as.factor(CustomerName),
+           PartnerName = as.factor(PartnerName)) %>% 
+    arrange(desc(start)) %>% 
+    select(serialno, CustomerName, PartnerName, result, start, finish, duration_min, Info, everything()) %>% 
+    filter(!str_detect(ajobid, "[A-Z]"))
+  
+ DT::datatable(test, filter = 'top', rownames = FALSE) %>% 
+     formatStyle(
+    'result',
+    # color = styleInterval(c(3.4, 3.8), c('white', 'blue', 'red')),
+    backgroundColor = styleEqual(c("SUCCESS", "FAIL"), c('green', 'red'))
+  ) %>% 
+   formatDate(5:6, method = "toLocaleString")
+
+```
+
+
+# Analytics 
+
+
+
+
+
+
+
+
+
